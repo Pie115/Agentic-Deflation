@@ -1,0 +1,21 @@
+Permutation method: none
+Samples: 200
+Total retries (Gemini attempts beyond first): 159
+Retries per sample: 0.7950 ± 3.5627
+
+Averages vs Original (original space):
+- RMSE (Gemini vs Original): 64.064352 ± 9.793724
+- NRMSE (0–1) (Gemini vs Original): 0.251233 ± 0.038407
+- SSIM (Gemini vs Original): 0.659258 ± 0.121912
+- RMSE (SVD vs Original): 53.553648 ± 9.253075
+- NRMSE (0–1) (SVD vs Original): 0.210014 ± 0.036287
+- SSIM (SVD vs Original): 0.766184 ± 0.082156
+
+Averages Gemini vs SVD (original space):
+- RMSE (Gemini vs SVD): 33.232889 ± 11.309880
+- NRMSE (0–1) (Gemini vs SVD): 0.130325 ± 0.044352
+- SSIM (Gemini vs SVD): 0.872249 ± 0.115268
+
+Permuted-space monitor (reference only):
+- RMSE (Gemini vs True in permuted space): 33.232889 ± 11.309880
+- NRMSE (0–1): 0.130325 ± 0.044352
