@@ -2,162 +2,198 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from sklearn.datasets import load_digits
-# NEW: use apply_permutation from your helper so examples share the SAME perm
 from permute_utils import apply_permutation
 
 def get_digits_image(index=0):
+    # load an 8x8 digit and scale to 0..255 ints
     data = load_digits()
     img = data.images[index]
     img = np.rint(img * (255.0 / 16.0)).astype(int)
     return img, data.target[index]
 
 def compute_svd_lists(matrix, k):
+    #return top k singular triplets as python lists
     U, S, VT = np.linalg.svd(matrix, full_matrices=False)
     u_list = [U[:, i].tolist() for i in range(k)]
     s_list = [float(S[i]) for i in range(k)]
     v_list = [VT[i, :].tolist() for i in range(k)]
     return u_list, s_list, v_list
 
-def build_solver_prompt(matrix, true_number, k=3, perm_method = 'none', row_order=None, col_order=None):
+def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=None, col_order=None, n_examples=2):
+    #build a prompt with exactly n_examples in context examples
+    #when n_examples is zero the prompt has no example blocks
 
     prompt = (
         "Context:\n"
         "You are a linear algebra expert helping to analyze a matrix.\n\n"
         "Task:\n"
-        f"Given a matrix, return the top {k} left singular vectors u₁, ..., uₖ, "
-        f"the top {k} right singular vectors v₁, ..., vₖ, and the top {k} singular values s₁, ..., sₖ from the matrix's singular value decomposition (SVD).\n"
-        f"That is, return u, s, and v such that A ≈ ∑ (sᵢ * uᵢ ⊗ vᵢᵗ) for i = 1 to {k}.\n\n"
+        f"Given a matrix, return the top {k} left singular vectors u1 to uk, "
+        f"the top {k} right singular vectors v1 to vk, and the top {k} singular values s1 to sk from the matrix singular value decomposition.\n"
+        f"That is, return u, s, and v such that A is approximately the sum over i from 1 to {k} of si times outer product of ui and vi.\n\n"
         "Instructions:\n"
-        "- Provide ONLY the lists, no prose:\n"
+        "Provide only the lists in this exact form with no prose\n"
         "u = [[...], [...], ...]\n"
         "s = [...]\n"
         "v = [[...], [...], ...]\n\n"
     )
 
-    ex1_index = random.randint(0, 1796)
-    ex1_matrix, ex1_number = get_digits_image(ex1_index)
-    while true_number == ex1_number:
-        ex1_index = random.randint(0, 1796)
-        ex1_matrix, ex1_number = get_digits_image(ex1_index)
+    ex_list_unperm = []
+    ex_list_perm = []
 
-    ex2_index = random.randint(0, 1796)
-    ex2_matrix, ex2_number = get_digits_image(ex2_index)
-    while (true_number == ex2_number) or (ex1_number == ex2_number):
-        ex2_index = random.randint(0, 1796)
-        ex2_matrix, ex2_number = get_digits_image(ex2_index)
+    if n_examples > 0:
+        used_labels = set([true_number])
+        while len(ex_list_unperm) < n_examples:
+            ex_idx = random.randint(0, 1796)
+            ex_mat, ex_num = get_digits_image(ex_idx)
+            if ex_num in used_labels:
+                continue
+            used_labels.add(ex_num)
 
-    if(perm_method != 'none'):
-        if(perm_method == 'group_n_teach'):
-            #Do group n teach algorithm
-            ex1_perm = apply_permutation(ex1_matrix, row_order, col_order)
-            ex2_perm = apply_permutation(ex2_matrix, row_order, col_order)
-        elif(perm_method == 'sort'):
-            #do basic sorting greatest to least on rows then columns.
-            if row_order is None or col_order is None:
-                row_order = np.argsort(-matrix.sum(axis=1))
-                col_order = np.argsort(-matrix.sum(axis=0))
+            if perm_method != 'none':
+                if perm_method == 'group_n_teach':
+                    ex_perm = apply_permutation(ex_mat, row_order, col_order)
+                elif perm_method == 'sort':
+                    if row_order is None or col_order is None:
+                        row_order = np.argsort(-matrix.sum(axis=1))
+                        col_order = np.argsort(-matrix.sum(axis=0))
+                    ex_perm = ex_mat[np.ix_(row_order, col_order)]
+                else:
+                    ex_perm = ex_mat
+            else:
+                ex_perm = ex_mat
 
-            ex1_perm = ex1_matrix[np.ix_(row_order, col_order)]
-            ex2_perm = ex2_matrix[np.ix_(row_order, col_order)]
+            u_i, s_i, v_i = compute_svd_lists(ex_perm, k)
+            prompt += f"Example {len(ex_list_unperm)+1}:\nMatrix:\n{ex_perm.tolist()}\n"
+            prompt += f"u = {u_i}\n"
+            prompt += f"s = {s_i}\n"
+            prompt += f"v = {v_i}\n\n"
 
-        u1, s1, v1 = compute_svd_lists(ex1_perm, k)
-        prompt += f"Example 1:\nMatrix:\n{ex1_perm.tolist()}\n"
-        prompt += f"u = {u1}\n"
-        prompt += f"s = {s1}\n"
-        prompt += f"v = {v1}\n\n"
-
-        u2, s2, v2 = compute_svd_lists(ex2_perm, k)
-        prompt += f"Example 2:\nMatrix:\n{ex2_perm.tolist()}\n"
-        prompt += f"u = {u2}\n"
-        prompt += f"s = {s2}\n"
-        prompt += f"v = {v2}\n\n"
-    else:
-        # No permutation, use examples as is
-        u1, s1, v1 = compute_svd_lists(ex1_matrix, k)
-        prompt += f"Example 1:\nMatrix:\n{ex1_matrix.tolist()}\n"
-        prompt += f"u = {u1}\n"
-        prompt += f"s = {s1}\n"
-        prompt += f"v = {v1}\n\n"
-
-        u2, s2, v2 = compute_svd_lists(ex2_matrix, k)
-        prompt += f"Example 2:\nMatrix:\n{ex2_matrix.tolist()}\n"
-        prompt += f"u = {u2}\n"
-        prompt += f"s = {s2}\n"
-        prompt += f"v = {v2}\n\n"
-
-
+            ex_list_unperm.append(ex_mat)
+            ex_list_perm.append(ex_perm)
 
     prompt += f"Matrix:\n{matrix.tolist()}"
-    return prompt, ex1_matrix, ex2_matrix
+    return prompt, ex_list_unperm, ex_list_perm
 
 def parse_gemini_response(text):
+    # parse u s v lists from the model text
     import ast
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     u_line = next(l for l in lines if l.startswith("u ="))
     s_line = next(l for l in lines if l.startswith("s ="))
     v_line = next(l for l in lines if l.startswith("v ="))
-    u = np.array(ast.literal_eval(u_line.split("=",1)[1].strip()))
-    s = np.array(ast.literal_eval(s_line.split("=",1)[1].strip()))
-    v = np.array(ast.literal_eval(v_line.split("=",1)[1].strip()))
-    if u.ndim == 1: u = u[None, :]
-    if v.ndim == 1: v = v[None, :]
+    u = np.array(ast.literal_eval(u_line.split("=", 1)[1].strip()))
+    s = np.array(ast.literal_eval(s_line.split("=", 1)[1].strip()))
+    v = np.array(ast.literal_eval(v_line.split("=", 1)[1].strip()))
+    if u.ndim == 1:
+        u = u[None, :]
+    if v.ndim == 1:
+        v = v[None, :]
     return u, s, v
 
 def reconstruct_rankk_from_uvs(u, s, v):
+    # rebuild rank k approximation from lists
     A = np.zeros((u.shape[1], v.shape[1]), dtype=float)
     for i in range(len(s)):
         A += s[i] * np.outer(u[i], v[i])
     return np.rint(np.clip(A, 0, 255)).astype(int)
 
 def true_rankk(matrix, k=3):
+    # true top k approximation by svd
     U, S, VT = np.linalg.svd(matrix, full_matrices=False)
     A = np.zeros_like(matrix, dtype=float)
     for i in range(k):
         A += S[i] * np.outer(U[:, i], VT[i, :])
     return np.rint(np.clip(A, 0, 255)).astype(int)
 
-def save_comparison_with_examples(ex1, ex2, original, gemini, truth, path="digits_rankk_comparison.png"):
-    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
-    images = [ex1, ex2, original, gemini, truth]
-    titles = ["Example 1", "Example 2", "Original", "Gemini Rank-k", "True Rank-k"]
-    for ax, img, title in zip(axes, images, titles):
-        ax.imshow(img, cmap='gray', vmin=0, vmax=255)
-        ax.set_title(title)
-        ax.axis('off')
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved {path}")
-
 def save_single_image(img, path):
+    # save a single grayscale image
     plt.imshow(img, cmap='gray', vmin=0, vmax=255)
     plt.axis('off')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.close()
-    print(f"Saved {path}")
 
-def save_dual_comparison_with_examples(
-    ex1, ex2, original, gemini, truth,
-    ex1_blocky, ex2_blocky, original_blocky, gemini_blocky, truth_blocky,
-    path="digits_rankk_comparison_dual.png"
-):
-    fig, axes = plt.subplots(2, 5, figsize=(15, 6))
-    top_imgs = [ex1, ex2, original, gemini, truth]
-    top_titles = ["Example 1", "Example 2", "Original", "Gemini Rank-k", "True Rank-k"]
-    bot_imgs = [ex1_blocky, ex2_blocky, original_blocky, gemini_blocky, truth_blocky]
-    bot_titles = ["Example 1 (Blocky)", "Example 2 (Blocky)", "Original (Blocky)", "Gemini Rank-k (Blocky)", "True Rank-k (Blocky)"]
+def save_comparison_variable_examples(ex_list_unperm, original, gemini, truth, path="digits_rankk_comparison.png"):
+    # save a row with optional example panels followed by original gemini truth
+    n_examples = len(ex_list_unperm)
+    cols = n_examples + 3
+    fig, axes = plt.subplots(1, cols, figsize=(3 * cols, 3))
 
-    for ax, img, title in zip(axes[0], top_imgs, top_titles):
-        ax.imshow(img, cmap='gray', vmin=0, vmax=255)
-        ax.set_title(title)
-        ax.axis('off')
+    col = 0
+    for i in range(n_examples):
+        axes[col].imshow(ex_list_unperm[i], cmap='gray', vmin=0, vmax=255)
+        axes[col].set_title(f"Example {i+1}")
+        axes[col].axis('off')
+        col += 1
 
-    for ax, img, title in zip(axes[1], bot_imgs, bot_titles):
-        ax.imshow(img, cmap='gray', vmin=0, vmax=255)
-        ax.set_title(title)
-        ax.axis('off')
+    axes[col].imshow(original, cmap='gray', vmin=0, vmax=255)
+    axes[col].set_title("Original")
+    axes[col].axis('off')
+    col += 1
 
+    axes[col].imshow(gemini, cmap='gray', vmin=0, vmax=255)
+    axes[col].set_title("Gemini Rank k")
+    axes[col].axis('off')
+    col += 1
+
+    axes[col].imshow(truth, cmap='gray', vmin=0, vmax=255)
+    axes[col].set_title("True Rank k")
+    axes[col].axis('off')
+
+    fig.suptitle(f"ICL examples {n_examples}")
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
-    print(f"Saved {path}")
+
+def save_dual_comparison_variable_examples(
+    ex_list_unperm, ex_list_perm,
+    original, gemini, truth,
+    original_blocky, gemini_blocky, truth_blocky,
+    path="digits_rankk_comparison_dual.png"
+):
+    # save two rows top is unpermuted bottom is permuted
+    # show exactly n_examples example panels in both rows
+    n_examples = len(ex_list_unperm)
+    cols = n_examples + 3
+    fig, axes = plt.subplots(2, cols, figsize=(3 * cols, 6))
+
+    col = 0
+    for i in range(n_examples):
+        axes[0, col].imshow(ex_list_unperm[i], cmap='gray', vmin=0, vmax=255)
+        axes[0, col].set_title(f"Example {i+1}")
+        axes[0, col].axis('off')
+
+        axes[1, col].imshow(ex_list_perm[i], cmap='gray', vmin=0, vmax=255)
+        axes[1, col].set_title(f"Example {i+1} blocky")
+        axes[1, col].axis('off')
+        col += 1
+
+    axes[0, col].imshow(original, cmap='gray', vmin=0, vmax=255)
+    axes[0, col].set_title("Original")
+    axes[0, col].axis('off')
+
+    axes[1, col].imshow(original_blocky, cmap='gray', vmin=0, vmax=255)
+    axes[1, col].set_title("Original blocky")
+    axes[1, col].axis('off')
+    col += 1
+
+    axes[0, col].imshow(gemini, cmap='gray', vmin=0, vmax=255)
+    axes[0, col].set_title("Gemini Rank k")
+    axes[0, col].axis('off')
+
+    axes[1, col].imshow(gemini_blocky, cmap='gray', vmin=0, vmax=255)
+    axes[1, col].set_title("Gemini blocky")
+    axes[1, col].axis('off')
+    col += 1
+
+    axes[0, col].imshow(truth, cmap='gray', vmin=0, vmax=255)
+    axes[0, col].set_title("True Rank k")
+    axes[0, col].axis('off')
+
+    axes[1, col].imshow(truth_blocky, cmap='gray', vmin=0, vmax=255)
+    axes[1, col].set_title("True blocky")
+    axes[1, col].axis('off')
+
+    fig.suptitle(f"ICL examples {n_examples}")
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
