@@ -10,10 +10,14 @@ import shutil
 from permute_utils import groupnteach_permutation
 import time
 
+
+np.random.seed(0)
+random.seed(0)
+
 k = 1
-n_per_method = 5
+n_per_method = 200
 perm_methods = ['none', 'sort', 'group_n_teach']
-icl_examples_list = [0, 1, 2, 3, 4]
+icl_examples_list = [3,4,5]
 k_blocks_default = 2
 
 genai.configure(api_key="AIzaSyCW_JDKAVHDpN9s_aHBftBmcAkxJoDCSjg")
