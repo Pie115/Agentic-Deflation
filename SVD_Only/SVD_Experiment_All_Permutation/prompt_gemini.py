@@ -4,25 +4,33 @@ import random
 from sklearn.datasets import load_digits
 from permute_utils import apply_permutation
 
-def get_digits_image(index=0):
-    # load an 8x8 digit and scale to 0..255 ints
-    data = load_digits()
-    img = data.images[index]
-    img = np.rint(img * (255.0 / 16.0)).astype(int)
-    return img, data.target[index]
+import torch
+from torchvision import datasets, transforms
+import torchvision.transforms.functional as TF
+
+def get_digits_image(index=0, dataset_name='digits', device='cpu'):
+    if dataset_name == 'digits':
+        data = load_digits()
+        img = data.images[index]
+        img = np.rint(img * (255.0 / 16.0)).astype(int)
+        return img, data.target[index]
+    elif dataset_name == 'cifar10':
+        transform = transforms.ToTensor()
+        cifar_data = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        img_tensor, label = cifar_data[index]
+        img_tensor = TF.rgb_to_grayscale(img_tensor)
+        img = img_tensor.squeeze(0).numpy()
+        img = np.rint(img * 255.0).astype(int)
+        return img, label
 
 def compute_svd_lists(matrix, k):
-    #return top k singular triplets as python lists
     U, S, VT = np.linalg.svd(matrix, full_matrices=False)
     u_list = [U[:, i].tolist() for i in range(k)]
     s_list = [float(S[i]) for i in range(k)]
     v_list = [VT[i, :].tolist() for i in range(k)]
     return u_list, s_list, v_list
 
-def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=None, col_order=None, n_examples=2):
-    #build a prompt with exactly n_examples in context examples
-    #when n_examples is zero the prompt has no example blocks
-
+def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=None, col_order=None, n_examples=2, dataset_name='digits'):
     prompt = (
         "Context:\n"
         "You are a linear algebra expert helping to analyze a matrix.\n\n"
@@ -42,9 +50,10 @@ def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=
 
     if n_examples > 0:
         used_labels = set([true_number])
+        max_index = 1796 if dataset_name == 'digits' else 49999
         while len(ex_list_unperm) < n_examples:
-            ex_idx = random.randint(0, 1796)
-            ex_mat, ex_num = get_digits_image(ex_idx)
+            ex_idx = random.randint(0, max_index)
+            ex_mat, ex_num = get_digits_image(ex_idx, dataset_name=dataset_name)
             if ex_num in used_labels:
                 continue
             used_labels.add(ex_num)
@@ -75,7 +84,6 @@ def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=
     return prompt, ex_list_unperm, ex_list_perm
 
 def parse_gemini_response(text):
-    # parse u s v lists from the model text
     import ast
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     u_line = next(l for l in lines if l.startswith("u ="))
@@ -91,14 +99,12 @@ def parse_gemini_response(text):
     return u, s, v
 
 def reconstruct_rankk_from_uvs(u, s, v):
-    # rebuild rank k approximation from lists
     A = np.zeros((u.shape[1], v.shape[1]), dtype=float)
     for i in range(len(s)):
         A += s[i] * np.outer(u[i], v[i])
     return np.rint(np.clip(A, 0, 255)).astype(int)
 
 def true_rankk(matrix, k=3):
-    # true top k approximation by svd
     U, S, VT = np.linalg.svd(matrix, full_matrices=False)
     A = np.zeros_like(matrix, dtype=float)
     for i in range(k):
@@ -106,14 +112,12 @@ def true_rankk(matrix, k=3):
     return np.rint(np.clip(A, 0, 255)).astype(int)
 
 def save_single_image(img, path):
-    # save a single grayscale image
     plt.imshow(img, cmap='gray', vmin=0, vmax=255)
     plt.axis('off')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.close()
 
 def save_comparison_variable_examples(ex_list_unperm, original, gemini, truth, path="digits_rankk_comparison.png"):
-    # save a row with optional example panels followed by original gemini truth
     n_examples = len(ex_list_unperm)
     cols = n_examples + 3
     fig, axes = plt.subplots(1, cols, figsize=(3 * cols, 3))
@@ -150,8 +154,6 @@ def save_dual_comparison_variable_examples(
     original_blocky, gemini_blocky, truth_blocky,
     path="digits_rankk_comparison_dual.png"
 ):
-    # save two rows top is unpermuted bottom is permuted
-    # show exactly n_examples example panels in both rows
     n_examples = len(ex_list_unperm)
     cols = n_examples + 3
     fig, axes = plt.subplots(2, cols, figsize=(3 * cols, 6))

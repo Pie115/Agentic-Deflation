@@ -10,23 +10,26 @@ import shutil
 from permute_utils import groupnteach_permutation
 import time
 
-
 np.random.seed(0)
 random.seed(0)
 
 k = 1
 n_per_method = 200
-perm_methods = ['none', 'sort', 'group_n_teach']
-icl_examples_list = [3,4,5]
-k_blocks_default = 2
+perm_methods = ['sort']
+icl_examples_list = [4, 5]
+k_blocks_default = 4 #2 for digits, 6 for cifar10
+
+dataset_name = 'cifar10' 
 
 genai.configure(api_key="AIzaSyCW_JDKAVHDpN9s_aHBftBmcAkxJoDCSjg")
 gemini_model = genai.GenerativeModel(model_name="gemini-2.5-flash")
 qwen_model, processor = load_qwen_vl()
 
-all_indices = random.sample(range(1, 1797), n_per_method)
+#Adjust index range for CIFAR-10 or digits
+max_index = 1796 if dataset_name == 'digits' else 49999
+all_indices = random.sample(range(1, max_index + 1), n_per_method)
 
-def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default, n_examples=2):
+def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default, n_examples=2, dataset_name='digits'):
     gem_vs_orig_rmse = []
     gem_vs_orig_ssim = []
     gem_vs_orig_nrmse = []
@@ -47,7 +50,7 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
 
     index = 0
     while index < len(indexes):
-        img, number = get_digits_image(indexes[index])
+        img, number = get_digits_image(indexes[index], dataset_name=dataset_name)
 
         if perm_method == 'group_n_teach':
             img_perm_float, row_order, col_order, row_inv, col_inv, groups, D = groupnteach_permutation(
@@ -55,7 +58,9 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
             )
             img_perm = img_perm_float.astype(int)
             prompt, ex_list_unperm, ex_list_perm = build_solver_prompt(
-                img_perm, number, k=k, perm_method=perm_method, row_order=row_order, col_order=col_order, n_examples=n_examples
+                img_perm, number, k=k, perm_method=perm_method,
+                row_order=row_order, col_order=col_order,
+                n_examples=n_examples, dataset_name=dataset_name
             )
         elif perm_method == 'sort':
             row_order = np.argsort(-img.sum(axis=1))
@@ -64,12 +69,15 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
             col_inv = np.argsort(col_order)
             img_perm = img[np.ix_(row_order, col_order)]
             prompt, ex_list_unperm, ex_list_perm = build_solver_prompt(
-                img_perm, number, k=k, perm_method=perm_method, row_order=row_order, col_order=col_order, n_examples=n_examples
+                img_perm, number, k=k, perm_method=perm_method,
+                row_order=row_order, col_order=col_order,
+                n_examples=n_examples, dataset_name=dataset_name
             )
         else:
             img_perm = img
             prompt, ex_list_unperm, ex_list_perm = build_solver_prompt(
-                img, number, k=k, perm_method=perm_method, n_examples=n_examples
+                img, number, k=k, perm_method=perm_method,
+                n_examples=n_examples, dataset_name=dataset_name
             )
 
         retries_this_sample = 0
@@ -162,27 +170,25 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
 
         retries_per_sample.append(retries_this_sample)
 
+        dest_folder = f"final_results_{dataset_name}_{perm_method}_icl{n_examples}"
+        os.makedirs(dest_folder, exist_ok=True)
+        file_base = f"{dataset_name}_rankk_comparison_{indexes[index]}"
+
         if perm_method != 'none':
             save_dual_comparison_variable_examples(
                 ex_list_unperm, ex_list_perm,
                 img, A_gemini_orig, A_true,
                 img_perm, A_gemini_perm, A_true_blocky,
-                path="digits_rankk_comparison_dual.png"
+                path="temp_comparison_dual.png"
             )
+            shutil.move("temp_comparison_dual.png", os.path.join(dest_folder, file_base + "_dual.png"))
         else:
             save_comparison_variable_examples(
                 ex_list_unperm,
                 img, A_gemini_perm, A_true,
-                path="digits_rankk_comparison.png"
+                path="temp_comparison.png"
             )
-
-        dest_folder = f"final_results_{perm_method}_icl{n_examples}"
-        os.makedirs(dest_folder, exist_ok=True)
-        file_base = f"digits_rankk_comparison_{indexes[index]}"
-        if perm_method != 'none':
-            shutil.move("digits_rankk_comparison_dual.png", os.path.join(dest_folder, file_base + "_dual.png"))
-        else:
-            shutil.move("digits_rankk_comparison.png", os.path.join(dest_folder, file_base + "_comparison.png"))
+            shutil.move("temp_comparison.png", os.path.join(dest_folder, file_base + "_comparison.png"))
 
         index += 1
 
@@ -193,7 +199,7 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
         return float(arr.mean()), float(arr.std(ddof=0))
 
     n = len(indexes)
-    dest_folder = f"final_results_{perm_method}_icl{n_examples}"
+    dest_folder = f"final_results_{dataset_name}_{perm_method}_icl{n_examples}"
     os.makedirs(dest_folder, exist_ok=True)
     metrics_path = os.path.join(dest_folder, "metrics.txt")
 
@@ -239,10 +245,10 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
         f.write(f"RMSE Gemini vs True permuted {perm_rmse_m:.6f} ± {perm_rmse_s:.6f}\n")
         f.write(f"NRMSE 0 to 1 {perm_nrmse_m:.6f} ± {perm_nrmse_s:.6f}\n")
 
-    print(f"[{perm_method} icl={n_examples}] wrote metrics -> {metrics_path}")
+    print(f"[{dataset_name} | {perm_method} icl={n_examples}] wrote metrics -> {metrics_path}")
 
 for n_examples in icl_examples_list:
     print(f"running icl={n_examples}")
     for m in perm_methods:
         print(f"method {m}")
-        run_svd_only_for_method(m, all_indices, k=k, k_blocks=k_blocks_default, n_examples=n_examples)
+        run_svd_only_for_method(m, all_indices, k=k, k_blocks=k_blocks_default, n_examples=n_examples, dataset_name=dataset_name)
