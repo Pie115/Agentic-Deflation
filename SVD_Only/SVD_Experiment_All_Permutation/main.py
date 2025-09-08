@@ -17,7 +17,7 @@ k = 1
 n_per_method = 200
 perm_methods = ['group_n_teach']
 icl_examples_list = [0]
-k_blocks_default = 4 #2 for digits, 4 for cifar10 we were using 6 previously
+k_blocks_default = 8 #2 for digits, 4 for cifar10 we were using 6 previously
 
 dataset_name = 'cifar10' 
 
