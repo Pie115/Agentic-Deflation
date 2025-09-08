@@ -33,10 +33,11 @@ def block_density_matrix(M, row_groups, col_groups, k, mode="mean"):
     return D
 
 def diagonalize_blocks_via_assignment(D):
-    # maximize diagonal sum -> minimize -D
+    # maximize diagonal sum
     row_idx, col_match = linear_sum_assignment(-D)
-    row_order_clusters = list(range(D.shape[0]))           # keep rows in natural order
-    col_order_clusters = list(col_match)                   # reorder columns to align dense blocks to diagonal
+    # order clusters by the matched row order and their paired columns
+    row_order_clusters = list(row_idx)
+    col_order_clusters = [col_match[i] for i in range(len(row_idx))]
     return row_order_clusters, col_order_clusters
 
 def build_perm_from_groups(groups, cluster_order):
