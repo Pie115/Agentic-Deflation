@@ -1,0 +1,22 @@
+Permutation method group_n_teach
+In context examples 4
+Samples 200
+Total retries beyond first 3
+Retries per sample 0.0150 ± 0.1216
+
+Averages vs Original
+RMSE Gemini vs Original 63.606088 ± 22.028644
+NRMSE 0 to 1 Gemini vs Original 0.249436 ± 0.086387
+SSIM Gemini vs Original 0.239431 ± 0.179156
+RMSE SVD vs Original 55.386181 ± 22.120236
+NRMSE 0 to 1 SVD vs Original 0.217201 ± 0.086746
+SSIM SVD vs Original 0.456032 ± 0.193413
+
+Averages Gemini vs SVD
+RMSE Gemini vs SVD 31.504335 ± 11.457958
+NRMSE 0 to 1 Gemini vs SVD 0.123546 ± 0.044933
+SSIM Gemini vs SVD 0.564847 ± 0.219532
+
+Permuted space monitor reference only
+RMSE Gemini vs True permuted 31.504335 ± 11.457958
+NRMSE 0 to 1 0.123546 ± 0.044933

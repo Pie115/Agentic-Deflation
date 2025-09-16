@@ -8,6 +8,20 @@ import torch
 from torchvision import datasets, transforms
 import torchvision.transforms.functional as TF
 
+def create_matrix(amount_k, n=16, m=16, noise=1):  #create a synthetic matrix for our experiments
+    matrix = np.zeros((n, m), dtype=float)
+    for i in range(amount_k):
+        u = np.random.randn(n)
+        v = np.random.randn(m)
+        s = np.random.uniform(10, 100)
+        matrix += s * np.outer(u, v)
+    if noise > 0:
+        matrix += np.random.normal(0, noise, size=(n, m))
+    matrix = np.rint(np.clip(matrix, 0, 255)).astype(int)
+    return matrix
+
+example = create_matrix(amount_k = 10)
+
 def get_digits_image(index=0, dataset_name='digits', device='cpu'):
     if dataset_name == 'digits':
         data = load_digits()
@@ -17,12 +31,27 @@ def get_digits_image(index=0, dataset_name='digits', device='cpu'):
     elif dataset_name == 'cifar10':
         transform = transforms.ToTensor()
         cifar_data = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-        img_tensor, label = cifar_data[index]
+        idx = index % len(cifar_data)  #simple guard
+        img_tensor, label = cifar_data[idx]
         img_tensor = TF.rgb_to_grayscale(img_tensor)
         img = img_tensor.squeeze(0).numpy()
         img = np.rint(img * 255.0).astype(int)
         return img, label
-
+    
+    elif dataset_name == 'synthetic':
+        #choose k in [1..10] uniformly, this is how many rank 1 matrices we use to construct each sample
+        amount_k = random.randint(1, 10)
+        #use 16x16 by default for synthetic since it is in between 8x8 and 32x32
+        img = create_matrix(amount_k=amount_k, n=16, m=16, noise=0)
+        return img, amount_k
+    
+    elif dataset_name == 'synthetic_noisy':
+        #If synthetic noisy is picked, we add random noise to the matrix along with components
+        amount_k = random.randint(1, 10)
+        #use 16x16 by default for synthetic since it is in between 8x8 and 32x32
+        img = create_matrix(amount_k=amount_k, n=16, m=16, noise=1)
+        return img, amount_k
+    
 def compute_svd_lists(matrix, k):
     U, S, VT = np.linalg.svd(matrix, full_matrices=False)
     u_list = [U[:, i].tolist() for i in range(k)]
@@ -50,7 +79,13 @@ def build_solver_prompt(matrix, true_number, k=3, perm_method='none', row_order=
 
     if n_examples > 0:
         used_labels = set([true_number])
-        max_index = 1796 if dataset_name == 'digits' else 49999
+        if dataset_name == 'digits':
+            max_index = 1796
+        elif dataset_name == 'cifar10':
+            max_index = 49999
+        else:  #synthetic
+            max_index = 1000000 
+
         while len(ex_list_unperm) < n_examples:
             ex_idx = random.randint(0, max_index)
             ex_mat, ex_num = get_digits_image(ex_idx, dataset_name=dataset_name)

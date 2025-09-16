@@ -15,21 +15,34 @@ random.seed(0)
 
 k = 1
 n_per_method = 200
-perm_methods = ['group_n_teach']
-icl_examples_list = [0]
-k_blocks_default = 8 #2 for digits, 4 for cifar10 we were using 6 previously
+extra_sample = 400
+perm_methods = ['none', 'sort', 'group_n_teach'] #can be none, sort, or group_n_teach
+icl_examples_list = [0,1,2,3,4,5]
+k_blocks_default = 4  #2 for digits, 8 for cifar10, 4 for synthetic
 
-dataset_name = 'cifar10' 
+dataset_name = 'synthetic_noisy'  #can be digits or cifar10 or synthetic or synthetic_noisy
 
 genai.configure(api_key="AIzaSyCW_JDKAVHDpN9s_aHBftBmcAkxJoDCSjg")
 gemini_model = genai.GenerativeModel(model_name="gemini-2.5-flash")
 qwen_model, processor = load_qwen_vl()
 
-#Adjust index range for CIFAR-10 or digits
-max_index = 1796 if dataset_name == 'digits' else 49999
-all_indices = random.sample(range(1, max_index + 1), n_per_method)
+#Adjust index range for CIFAR-10 or digits or synthetic
+if dataset_name == 'digits':
+    max_index = 1796
+elif dataset_name == 'cifar10':
+    max_index = 49999
+else:  #synthetic, indeces don't matter
+    max_index = 1000000
 
-def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default, n_examples=2, dataset_name='digits'):
+all_indices = random.sample(range(1, max_index + 1), n_per_method + extra_sample)
+
+def mean_std(arr):
+    arr = np.array(arr, dtype=float)
+    if arr.size == 0:
+        return float('nan'), float('nan')
+    return float(arr.mean()), float(arr.std(ddof=0))
+
+def run_svd_only_for_method(perm_method, indexes, n_per_method, k=1, k_blocks=k_blocks_default, n_examples=2, dataset_name='digits'):
     gem_vs_orig_rmse = []
     gem_vs_orig_ssim = []
     gem_vs_orig_nrmse = []
@@ -49,7 +62,9 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
     retries_per_sample = []
 
     index = 0
-    while index < len(indexes):
+    number_of_tests = 0
+
+    while number_of_tests < n_per_method:
         img, number = get_digits_image(indexes[index], dataset_name=dataset_name)
 
         if perm_method == 'group_n_teach':
@@ -81,7 +96,7 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
             )
 
         retries_this_sample = 0
-        while True:
+        while retries_this_sample < 10:
             try:
                 resp = gemini_model.generate_content([prompt])
             except Exception as e:
@@ -97,7 +112,6 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
             except Exception as e:
                 print(f"parse or reconstruct error {e}")
                 retries_this_sample += 1
-                total_retries += 1
                 continue
 
             A_true = true_rankk(img, k=k)
@@ -130,7 +144,6 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
                 nrmse_perm = rmse_perm / 255.0
             except ValueError:
                 retries_this_sample += 1
-                total_retries += 1
                 continue
 
             save_single_image(img_perm, "original_blocky.png")
@@ -149,7 +162,6 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
 
             if result["decision"] == 'reject':
                 retries_this_sample += 1
-                total_retries += 1
                 continue
             else:
                 gem_vs_orig_rmse.append(rmse_gem_vs_orig)
@@ -168,37 +180,34 @@ def run_svd_only_for_method(perm_method, indexes, k=1, k_blocks=k_blocks_default
                 perm_nrmse_monitor.append(nrmse_perm)
                 break
 
-        retries_per_sample.append(retries_this_sample)
+        if(retries_this_sample < 10):
+            total_retries += retries_this_sample
+            retries_per_sample.append(retries_this_sample)
 
-        dest_folder = f"final_results_{dataset_name}_{perm_method}_icl{n_examples}"
-        os.makedirs(dest_folder, exist_ok=True)
-        file_base = f"{dataset_name}_rankk_comparison_{indexes[index]}"
+            dest_folder = f"final_results_{dataset_name}_{perm_method}_icl{n_examples}"
+            os.makedirs(dest_folder, exist_ok=True)
+            file_base = f"{dataset_name}_rankk_comparison_{indexes[index]}"
 
-        if perm_method != 'none':
-            save_dual_comparison_variable_examples(
-                ex_list_unperm, ex_list_perm,
-                img, A_gemini_orig, A_true,
-                img_perm, A_gemini_perm, A_true_blocky,
-                path="temp_comparison_dual.png"
-            )
-            shutil.move("temp_comparison_dual.png", os.path.join(dest_folder, file_base + "_dual.png"))
-        else:
-            save_comparison_variable_examples(
-                ex_list_unperm,
-                img, A_gemini_perm, A_true,
-                path="temp_comparison.png"
-            )
-            shutil.move("temp_comparison.png", os.path.join(dest_folder, file_base + "_comparison.png"))
+            if perm_method != 'none':
+                save_dual_comparison_variable_examples(
+                    ex_list_unperm, ex_list_perm,
+                    img, A_gemini_orig, A_true,
+                    img_perm, A_gemini_perm, A_true_blocky,
+                    path="temp_comparison_dual.png"
+                )
+                shutil.move("temp_comparison_dual.png", os.path.join(dest_folder, file_base + "_dual.png"))
+            else:
+                save_comparison_variable_examples(
+                    ex_list_unperm,
+                    img, A_gemini_perm, A_true,
+                    path="temp_comparison.png"
+                )
+                shutil.move("temp_comparison.png", os.path.join(dest_folder, file_base + "_comparison.png"))
+            number_of_tests += 1
 
         index += 1
 
-    def mean_std(arr):
-        arr = np.array(arr, dtype=float)
-        if arr.size == 0:
-            return float('nan'), float('nan')
-        return float(arr.mean()), float(arr.std(ddof=0))
-
-    n = len(indexes)
+    n = n_per_method
     dest_folder = f"final_results_{dataset_name}_{perm_method}_icl{n_examples}"
     os.makedirs(dest_folder, exist_ok=True)
     metrics_path = os.path.join(dest_folder, "metrics.txt")
@@ -251,4 +260,4 @@ for n_examples in icl_examples_list:
     print(f"running icl={n_examples}")
     for m in perm_methods:
         print(f"method {m}")
-        run_svd_only_for_method(m, all_indices, k=k, k_blocks=k_blocks_default, n_examples=n_examples, dataset_name=dataset_name)
+        run_svd_only_for_method(m, all_indices, k=k, n_per_method=n_per_method, k_blocks=k_blocks_default, n_examples=n_examples, dataset_name=dataset_name)
