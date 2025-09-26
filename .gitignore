@@ -1,1 +1,16 @@
-SVD_Only/SVD_Experiment_All_Permutation/data/
+SVD_Only/data
+SVD_Only/Results_Cifar10_32x32
+SVD_Only/Results_Digits_8x8
+SVD_Only/Results_Numpy-and-Random
+SVD_Only/Results_Synthetic_16x16
+SVD_Only/Results_Synthetic_Noisy_16x16
+SVD_Only/__pycache__
+SVD_Only/rank_1_comparisons.py
+
+Deflation/__pycache__
+Deflation/data
+Deflation/final_results_deflation_synthetic_group_n_teach_icl1
+Deflation/results_cifar10
+Deflation/results_digits
+Deflation/results_synthetic_noisy
+Deflation/final_results_deflation_synthetic_none_icl2
