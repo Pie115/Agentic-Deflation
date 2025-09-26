@@ -6,6 +6,7 @@ SVD_Only/Results_Synthetic_16x16
 SVD_Only/Results_Synthetic_Noisy_16x16
 SVD_Only/__pycache__
 SVD_Only/rank_1_comparisons.py
+SVD_Only/Random_SVD.py
 
 Deflation/__pycache__
 Deflation/data
